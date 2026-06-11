@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+<title>ventro · Skincare</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet" />
+<!-- Telegram Mini App SDK -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", -apple-system, system-ui, sans-serif;
+    background: #e9e7ef;
+    background: radial-gradient(120% 120% at 50% 0%, #efedf4 0%, #e4e1ec 100%);
+    min-height: 100vh;
+    min-height: 100dvh;
+    color: #16151a;
+    -webkit-font-smoothing: antialiased;
+  }
+  :root {
+    --serif: "Cormorant Garamond", Georgia, serif;
+    --bg: #ffffff;
+    --surface: #faf9fc;
+    --ink: #1a1822;
+    --ink-soft: #6b6878;
+    --ink-faint: #a7a4b3;
+    --line: #ecebf1;
+    --ph-bg: #f4f2f8;
+  }
+  button { font-family: inherit; cursor: pointer; background: none; border: none; padding: 0; }
+  input { font-family: inherit; }
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
+  .tg-ghost-btn:active { opacity: 0.5; }
+  .grad-btn:active { transform: scale(0.975); }
+  .add-btn:active { transform: scale(0.86); }
+  .prod-card:active { transform: scale(0.985); }
+
+  /* App fills the Telegram WebView. On a wide desktop browser it centers as a phone-width column for comfortable testing. */
+  #root { width: 100%; min-height: 100vh; min-height: 100dvh; }
+  .app-shell {
+    width: 100%; max-width: 440px; margin: 0 auto;
+    min-height: 100vh; min-height: 100dvh;
+    background: var(--bg);
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.04);
+  }
+
+  @keyframes screenEnter { from { transform: translateY(10px); } to { transform: translateY(0); } }
+  .screen-enter { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  @media (prefers-reduced-motion: no-preference) {
+    .screen-enter { animation: screenEnter .32s cubic-bezier(.22,.61,.36,1); }
+  }
+  @keyframes popIn { 0% { transform: scale(.5); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+  @media (prefers-reduced-motion: no-preference) {
+    .pop-in { animation: popIn .6s cubic-bezier(.34,1.56,.64,1); }
+  }
+  .fly-dot { position: fixed; z-index: 9999; border-radius: 50%; pointer-events: none;
+    background: var(--grad); box-shadow: 0 6px 16px var(--grad-shadow); }
+
+  /* Product image placeholder (replaces the design-tool image-slot component) */
+  .ph-slot { position: relative; width: 100%; height: 100%; display: grid; place-items: center;
+    background: var(--ph-bg); color: var(--ink-faint); }
+  .ph-slot svg { opacity: .5; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+/* ──────────────────────────────────────────────────────────────
+   Telegram Mini App bridge — degrades gracefully in a plain browser
+   ────────────────────────────────────────────────────────────── */
+const tg = (window.Telegram && window.Telegram.WebApp) || null;
+const haptic = (kind = "light") => {
+  try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(kind); } catch (e) {}
+};
+const notify = (kind = "success") => {
+  try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(kind); } catch (e) {}
+};
+
+/* ──────────────────────────────────────────────────────────────
+   Catalog
+   ────────────────────────────────────────────────────────────── */
+const PRODUCTS = [
+  { id: "manyo-pure-cleansing-oil", brand: "ma:nyo", name: "Pure Cleansing Oil", size: "200 ml", category: "Cleansers", price: 22.0,
+    description: "A gentle, botanical oil cleanser that melts away stubborn makeup, sebum, and sunscreen without stripping moisture or leaving a greasy residue.",
+    instructions: "Massage 2–3 pumps onto dry skin in circular motions. Add a splash of warm water to emulsify into a milky texture, massage briefly, then rinse completely." },
+  { id: "anua-heartleaf-cleansing-oil", brand: "Anua", name: "Heartleaf Pore Control Cleansing Oil", size: "200 ml", category: "Cleansers", price: 20.0,
+    description: "A non-comedogenic oil cleanser enriched with Heartleaf extract, formulated to calm redness while pulling impurities and blackheads out of pores.",
+    instructions: "Apply to a dry face and massage gently, focusing on areas with visible blackheads. Emulsify with water and rinse thoroughly, then follow with a water-based cleanser." },
+  { id: "roundlab-dokdo-toner", brand: "Round Lab", name: "1025 Dokdo Toner", size: "200 ml", category: "Toners", price: 15.0,
+    description: "A lightweight, watery toner that uses deep sea water from Ulleungdo Island to gently exfoliate dead skin cells while providing intense, zero-burden hydration.",
+    instructions: "After cleansing, pour a small amount onto a cotton pad or your palms and gently sweep or pat across your face and neck." },
+  { id: "mediheal-madecassoside-pad", brand: "Mediheal", name: "Madecassoside Blemish Pad", size: "100 pads", category: "Toners", price: 22.0,
+    description: "Pre-soaked daily treatment pads with Madecassoside and Centella Asiatica to rapidly calm inflammation, soothe active blemishes, and fade post-acne dark spots.",
+    instructions: "Place a pad onto targeted areas and leave for 3–5 minutes as a quick soothing mask, or wipe gently across the skin as a toner step." },
+  { id: "cosrx-snail-essence", brand: "COSRX", name: "Advanced Snail 96 Mucin Power Essence", size: "100 ml", category: "Serums", price: 25.0,
+    description: "A cult-favorite, lightweight essence with 96% Snail Secretion Filtrate. It repairs the skin barrier, locks in deep moisture, improves elasticity, and leaves a healthy glow.",
+    instructions: "Apply a dime-sized amount to your face after toning while skin is still slightly damp. Pat gently with fingertips to aid absorption." },
+  { id: "torriden-dive-in-serum", brand: "Torriden", name: "DIVE-IN Low Molecular Hyaluronic Acid Serum", size: "50 ml", category: "Serums", price: 18.0,
+    description: "A refreshing, pastel-blue serum packed with 5 types of low-molecular hyaluronic acid that instantly plumps dehydrated skin without any stickiness.",
+    instructions: "Dispense 2–3 drops using the dropper directly onto your face. Smooth evenly across the skin and pat gently until fully absorbed." },
+  { id: "aestura-atobarrier-cream", brand: "AESTURA", name: "Atobarrier 365 Cream", size: "80 ml", category: "Moisturizers", price: 28.0,
+    description: "A professional-grade barrier cream with visible triple-lipid capsules that melt into the skin to heal dry, flaky, or compromised skin.",
+    instructions: "Use as the final step of your evening routine. Apply an even layer and gently press with warm hands to melt the moisture capsules into the skin." },
+  { id: "boj-relief-sun", brand: "Beauty of Joseon", name: "Relief Sun: Rice + Probiotics SPF50+", size: "50 ml", category: "Sun Care", price: 18.0,
+    description: "A lightweight organic sunscreen that behaves like a moisturizing cream. Enriched with 30% rice extract and grain-derived probiotics, it leaves no white cast.",
+    instructions: "Apply a generous amount evenly across face, ears, and neck as the final morning step, at least 15 minutes before sun exposure." },
+];
+const CATEGORIES = ["All", "Cleansers", "Toners", "Serums", "Moisturizers", "Sun Care"];
+
+/* ──────────────────────────────────────────────────────────────
+   Theme — final "Balanced" lavender→amethyst gradient
+   ────────────────────────────────────────────────────────────── */
+const GRAD = { a: "#C3ACF2", b: "#8052DF", ink: "#7244CD", shadow: "rgba(128,82,223,0.30)" };
+const ANGLE = 135;
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+(function applyTheme() {
+  const r = document.documentElement.style;
+  r.setProperty("--grad", `linear-gradient(${ANGLE}deg, ${GRAD.a}, ${GRAD.b})`);
+  r.setProperty("--grad-wash", `linear-gradient(180deg, ${hexA(GRAD.a, 0)}, ${hexA(GRAD.a, 0.5)})`);
+  r.setProperty("--grad-shadow", GRAD.shadow);
+  r.setProperty("--accent-ink", GRAD.ink);
+  r.setProperty("--accent-line", hexA(GRAD.b, 0.45));
+  r.setProperty("--surface", hexA(GRAD.a, 0.10));
+  r.setProperty("--ph-bg", hexA(GRAD.a, 0.14));
+})();
+
+const fmt = (n) => "$" + n.toFixed(2).replace(/\.00$/, "");
+
+/* ──────────────────────────────────────────────────────────────
+   Fly-to-bag animation
+   ────────────────────────────────────────────────────────────── */
+function flyToBag(originEl, rootEl) {
+  if (!originEl) return;
+  const o = originEl.getBoundingClientRect();
+  let tx, ty;
+  const bag = document.getElementById("bag-target");
+  if (bag) { const b = bag.getBoundingClientRect(); tx = b.left + 28; ty = b.top + b.height / 2; }
+  else if (rootEl) { const r = rootEl.getBoundingClientRect(); tx = r.left + r.width / 2; ty = r.bottom - 58; }
+  else return;
+  const dot = document.createElement("div");
+  dot.className = "fly-dot";
+  const size = 18;
+  dot.style.width = size + "px"; dot.style.height = size + "px";
+  dot.style.left = (o.left + o.width / 2 - size / 2) + "px";
+  dot.style.top = (o.top + o.height / 2 - size / 2) + "px";
+  document.body.appendChild(dot);
+  const dx = tx - (o.left + o.width / 2);
+  const dy = ty - (o.top + o.height / 2);
+  const anim = dot.animate([
+    { transform: "translate(0,0) scale(1)", opacity: 1 },
+    { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 60}px) scale(1.1)`, opacity: 1, offset: 0.5 },
+    { transform: `translate(${dx}px, ${dy}px) scale(0.25)`, opacity: 0.2 },
+  ], { duration: 620, easing: "cubic-bezier(.5,.05,.5,1)" });
+  anim.onfinish = () => dot.remove();
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Iconography (thin line)
+   ────────────────────────────────────────────────────────────── */
+function Icon({ name, size = 20, stroke = "currentColor", sw = 1.6 }) {
+  const p = { fill: "none", stroke, strokeWidth: sw, strokeLinecap: "round", strokeLinejoin: "round" };
+  const paths = {
+    search: <><circle cx="11" cy="11" r="7" {...p} /><path d="M20 20l-3.2-3.2" {...p} /></>,
+    bag: <><path d="M6 8h12l-1 12H7L6 8z" {...p} /><path d="M9 8a3 3 0 0 1 6 0" {...p} /></>,
+    back: <path d="M15 5l-7 7 7 7" {...p} />,
+    close: <path d="M6 6l12 12M18 6L6 18" {...p} />,
+    dots: <><circle cx="5" cy="12" r="1.4" fill={stroke} stroke="none" /><circle cx="12" cy="12" r="1.4" fill={stroke} stroke="none" /><circle cx="19" cy="12" r="1.4" fill={stroke} stroke="none" /></>,
+    plus: <path d="M12 6v12M6 12h12" {...p} />,
+    minus: <path d="M6 12h12" {...p} />,
+    check: <path d="M5 12.5l4.5 4.5L19 7" {...p} />,
+    heart: <path d="M12 20s-7-4.6-7-9.3A3.7 3.7 0 0 1 12 8a3.7 3.7 0 0 1 7-2.3C19 11.4 12 20 12 20z" {...p} />,
+    chevron: <path d="M9 6l6 6-6 6" {...p} />,
+    spark: <path d="M12 4l1.6 5.4L19 11l-5.4 1.6L12 18l-1.6-5.4L5 11l5.4-1.6L12 4z" {...p} />,
+    bottle: <><path d="M9 3h6M10 3v2.2c0 .8-.4 1.5-1 2.1A4 4 0 0 0 8 10v8a3 3 0 0 0 3 3h2a3 3 0 0 0 3-3v-8a4 4 0 0 0-1-2.7c-.6-.6-1-1.3-1-2.1V3" {...p} /></>,
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: "block" }}>{paths[name]}</svg>;
+}
+
+/* Styled product-photo placeholder */
+function ProductImage({ radius = 16 }) {
+  return (
+    <div className="ph-slot" style={{ borderRadius: radius }}>
+      <Icon name="bottle" size={Math.max(20, Math.min(40, radius * 1.6))} stroke="var(--ink-faint)" sw={1.3} />
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Telegram Mini App header
+   ────────────────────────────────────────────────────────────── */
+function TelegramHeader({ showBack, onBack, onClose }) {
+  return (
+    <div style={{ position: "relative", flexShrink: 0, paddingTop: "max(14px, env(safe-area-inset-top))", background: "#fff" }}>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 60, background: "var(--grad-wash)", opacity: 0.5, pointerEvents: "none" }} />
+      <div style={{ position: "relative", height: 46, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 14px" }}>
+        <div style={{ position: "absolute", left: 12, display: "flex", alignItems: "center" }}>
+          {showBack && (
+            <button className="tg-ghost-btn" onClick={onBack} aria-label="Back"
+              style={{ display: "flex", alignItems: "center", gap: 2, color: "var(--accent-ink)", fontSize: 16, fontWeight: 500 }}>
+              <Icon name="back" size={22} sw={2} />
+            </button>
+          )}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1 }}>
+          <span style={{ fontFamily: "var(--serif)", fontSize: 21, letterSpacing: "0.16em", color: "var(--ink)", fontWeight: 500, paddingLeft: "0.16em" }}>ventro</span>
+          <span style={{ fontSize: 9.5, letterSpacing: "0.34em", color: "var(--ink-faint)", marginTop: 3, paddingLeft: "0.34em" }}>SKINCARE</span>
+        </div>
+        <div style={{ position: "absolute", right: 10, display: "flex", alignItems: "center", gap: 2, background: "rgba(118,114,130,0.10)", borderRadius: 9999, padding: 2 }}>
+          <button className="tg-ghost-btn" aria-label="Menu" style={{ width: 30, height: 30, borderRadius: "50%", display: "grid", placeItems: "center", color: "var(--ink-soft)" }}>
+            <Icon name="dots" size={18} />
+          </button>
+          <div style={{ width: 1, height: 16, background: "rgba(118,114,130,0.22)" }} />
+          <button className="tg-ghost-btn" onClick={onClose} aria-label="Close" style={{ width: 30, height: 30, borderRadius: "50%", display: "grid", placeItems: "center", color: "var(--ink-soft)" }}>
+            <Icon name="close" size={17} sw={1.9} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Shared UI
+   ────────────────────────────────────────────────────────────── */
+function FilterPills({ categories, active, onChange }) {
+  return (
+    <div className="no-scrollbar" style={{ display: "flex", gap: 8, overflowX: "auto", padding: "2px 20px 4px" }}>
+      {categories.map((c) => {
+        const on = c === active;
+        return (
+          <button key={c} onClick={() => onChange(c)}
+            style={{ flexShrink: 0, height: 36, padding: "0 17px", borderRadius: 9999, fontSize: 13.5, fontWeight: 500, letterSpacing: "0.01em", whiteSpace: "nowrap", transition: "all .22s ease",
+              border: on ? "1px solid transparent" : "1px solid var(--line)", background: on ? "var(--grad)" : "#fff", color: on ? "#fff" : "var(--ink-soft)", boxShadow: on ? "0 4px 14px var(--grad-shadow)" : "none" }}>
+            {c}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function QtyStepper({ value, onDec, onInc, compact }) {
+  const s = compact ? 28 : 36;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: compact ? 10 : 16, border: "1px solid var(--line)", borderRadius: 9999, padding: compact ? "2px 4px" : "3px 6px", background: "#fff" }}>
+      <button onClick={onDec} aria-label="Decrease" style={{ width: s, height: s, borderRadius: "50%", display: "grid", placeItems: "center", color: value <= 1 ? "var(--ink-faint)" : "var(--accent-ink)" }}>
+        <Icon name="minus" size={compact ? 16 : 18} sw={2} />
+      </button>
+      <span style={{ minWidth: 16, textAlign: "center", fontSize: compact ? 14 : 16, fontWeight: 600, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>{value}</span>
+      <button onClick={onInc} aria-label="Increase" style={{ width: s, height: s, borderRadius: "50%", display: "grid", placeItems: "center", color: "var(--accent-ink)" }}>
+        <Icon name="plus" size={compact ? 16 : 18} sw={2} />
+      </button>
+    </div>
+  );
+}
+
+function GradientButton({ children, onClick, disabled, style }) {
+  return (
+    <button className="grad-btn" onClick={onClick} disabled={disabled}
+      style={{ width: "100%", height: 56, borderRadius: 18, border: "none", background: "var(--grad)", color: "#fff", fontSize: 16, fontWeight: 600, letterSpacing: "0.01em",
+        boxShadow: disabled ? "none" : "0 10px 28px var(--grad-shadow), inset 0 1px 0 rgba(255,255,255,0.25)", opacity: disabled ? 0.45 : 1, position: "relative", overflow: "hidden",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 9, transition: "transform .12s ease, box-shadow .2s ease", ...style }}>
+      <span style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0) 55%)", pointerEvents: "none" }} />
+      <span style={{ position: "relative", display: "flex", alignItems: "center", gap: 9 }}>{children}</span>
+    </button>
+  );
+}
+
+function ProductCard({ product, onOpen, onAdd, added }) {
+  return (
+    <div onClick={() => onOpen(product)} className="prod-card" style={{ background: "#fff", borderRadius: 22, border: "1px solid var(--line)", padding: 10, cursor: "pointer", display: "flex", flexDirection: "column", boxShadow: "0 1px 2px rgba(20,18,30,0.03)", transition: "transform .16s ease, box-shadow .2s ease" }}>
+      <div style={{ position: "relative", width: "100%", aspectRatio: "1 / 1.05", borderRadius: 16, overflow: "hidden", background: "var(--ph-bg)" }}>
+        <ProductImage radius={16} />
+      </div>
+      <div style={{ padding: "12px 6px 4px", display: "flex", flexDirection: "column", flex: 1 }}>
+        <div style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{product.brand}</div>
+        <div style={{ fontFamily: "var(--serif)", fontSize: 16.5, lineHeight: 1.2, color: "var(--ink)", marginTop: 5, textWrap: "pretty", flex: 1 }}>{product.name}</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
+          <span style={{ fontSize: 17, fontWeight: 600, background: "var(--grad)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{fmt(product.price)}</span>
+          <button onClick={(e) => { e.stopPropagation(); onAdd(product, e.currentTarget); }} aria-label="Add to bag" className="add-btn"
+            style={{ width: 38, height: 38, borderRadius: "50%", border: "none", background: "var(--grad)", color: "#fff", display: "grid", placeItems: "center", boxShadow: "0 5px 14px var(--grad-shadow)", transition: "transform .18s cubic-bezier(.34,1.56,.64,1)" }}>
+            <Icon name={added ? "check" : "plus"} size={20} sw={2.1} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value, big }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: big ? "2px 0" : "3px 0" }}>
+      <span style={{ fontSize: big ? 16 : 14, fontWeight: big ? 600 : 400, color: big ? "var(--ink)" : "var(--ink-soft)" }}>{label}</span>
+      <span style={{ fontSize: big ? 22 : 14, fontWeight: big ? 700 : 500, color: "var(--ink)", fontFamily: big ? "var(--serif)" : "inherit" }}>{value}</span>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Screens
+   ────────────────────────────────────────────────────────────── */
+function HomeScreen({ products, category, setCategory, openProduct, addToCart, cartCount, cartTotal, goCart, goSearch, justAdded }) {
+  const shown = category === "All" ? products : products.filter((p) => p.category === category);
+  return (
+    <React.Fragment>
+      <div className="scroll no-scrollbar" style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ padding: "18px 20px 14px" }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--accent-ink)", marginBottom: 8 }}>The K-Beauty Edit</div>
+          <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 30, lineHeight: 1.12, color: "var(--ink)", margin: 0, textWrap: "balance" }}>
+            Quiet rituals for<br />luminous skin.
+          </h1>
+        </div>
+        <div style={{ padding: "0 20px 14px" }}>
+          <button onClick={goSearch} style={{ width: "100%", height: 46, borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface)", display: "flex", alignItems: "center", gap: 10, padding: "0 16px", color: "var(--ink-faint)", fontSize: 14.5 }}>
+            <Icon name="search" size={19} stroke="var(--ink-soft)" />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Search serums, SPF, toners…</span>
+          </button>
+        </div>
+        <FilterPills categories={CATEGORIES} active={category} onChange={setCategory} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: "14px 16px 24px" }}>
+          {shown.map((p) => (
+            <ProductCard key={p.id} product={p} onOpen={openProduct} onAdd={addToCart} added={justAdded === p.id} />
+          ))}
+        </div>
+        <div style={{ height: cartCount > 0 ? 92 : 24 }} />
+      </div>
+      <BagBar count={cartCount} total={cartTotal} onClick={goCart} />
+    </React.Fragment>
+  );
+}
+
+function BagBar({ count, total, onClick }) {
+  if (!count) return null;
+  return (
+    <div style={{ position: "absolute", left: 16, right: 16, bottom: "max(30px, env(safe-area-inset-bottom))", zIndex: 30 }}>
+      <button id="bag-target" onClick={onClick} className="grad-btn" style={{ width: "100%", height: 58, borderRadius: 18, border: "none", background: "var(--grad)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 10px 0 20px", boxShadow: "0 14px 34px var(--grad-shadow), inset 0 1px 0 rgba(255,255,255,0.25)" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <span style={{ position: "relative", display: "grid", placeItems: "center" }}>
+            <Icon name="bag" size={22} />
+            <span style={{ position: "absolute", top: -7, right: -9, minWidth: 18, height: 18, padding: "0 5px", background: "#fff", color: "var(--accent-ink)", borderRadius: 9999, fontSize: 11, fontWeight: 700, display: "grid", placeItems: "center" }}>{count}</span>
+          </span>
+          <span style={{ fontSize: 15.5, fontWeight: 600 }}>View Bag</span>
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15.5, fontWeight: 600 }}>
+          {fmt(total)}
+          <span style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(255,255,255,0.22)", display: "grid", placeItems: "center" }}>
+            <Icon name="chevron" size={18} sw={2} />
+          </span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function SearchScreen({ products, query, setQuery, openProduct, addToCart, justAdded }) {
+  const inputRef = useRef(null);
+  useEffect(() => { const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 280); return () => clearTimeout(t); }, []);
+  const q = query.trim().toLowerCase();
+  const results = q ? products.filter((p) => (p.name + " " + p.brand + " " + p.category).toLowerCase().includes(q)) : [];
+  const suggestions = ["Snail mucin", "SPF 50", "Hydrating toner", "Barrier cream", "Cleansing oil"];
+  return (
+    <div className="scroll no-scrollbar" style={{ flex: 1, overflowY: "auto" }}>
+      <div style={{ padding: "16px 20px 6px" }}>
+        <div style={{ height: 50, borderRadius: 15, border: "1px solid var(--accent-line)", background: "#fff", display: "flex", alignItems: "center", gap: 11, padding: "0 16px", boxShadow: "0 4px 18px var(--grad-shadow)" }}>
+          <Icon name="search" size={20} stroke="var(--accent-ink)" />
+          <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search ventro" style={{ flex: 1, border: "none", outline: "none", fontSize: 16, color: "var(--ink)", background: "transparent" }} />
+          {query && <button onClick={() => setQuery("")} style={{ color: "var(--ink-faint)" }}><Icon name="close" size={18} /></button>}
+        </div>
+      </div>
+      {!q && (
+        <div style={{ padding: "18px 20px" }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-faint)", marginBottom: 14 }}>Popular searches</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 9 }}>
+            {suggestions.map((s) => (
+              <button key={s} onClick={() => setQuery(s)} style={{ height: 38, padding: "0 16px", borderRadius: 9999, border: "1px solid var(--line)", background: "#fff", color: "var(--ink-soft)", fontSize: 13.5, display: "flex", alignItems: "center", gap: 7 }}>
+                <Icon name="spark" size={14} stroke="var(--accent-ink)" /> {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {q && (
+        <div style={{ padding: "8px 16px 24px" }}>
+          <div style={{ padding: "8px 4px 12px", fontSize: 13, color: "var(--ink-soft)" }}>
+            {results.length} {results.length === 1 ? "result" : "results"} for “{query}”
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {results.map((p) => (
+              <ResultRow key={p.id} product={p} onOpen={openProduct} onAdd={addToCart} added={justAdded === p.id} />
+            ))}
+            {results.length === 0 && (
+              <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--ink-faint)" }}>
+                <Icon name="search" size={28} stroke="var(--ink-faint)" />
+                <div style={{ marginTop: 12, fontSize: 14 }}>Nothing matched. Try a brand or ingredient.</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <div style={{ height: 20 }} />
+    </div>
+  );
+}
+
+function ResultRow({ product, onOpen, onAdd, added }) {
+  return (
+    <div onClick={() => onOpen(product)} style={{ display: "flex", alignItems: "center", gap: 14, padding: 8, borderRadius: 16, border: "1px solid var(--line)", background: "#fff", cursor: "pointer" }}>
+      <div style={{ width: 64, height: 64, borderRadius: 12, overflow: "hidden", flexShrink: 0, background: "var(--ph-bg)" }}>
+        <ProductImage radius={12} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 9.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{product.brand}</div>
+        <div style={{ fontFamily: "var(--serif)", fontSize: 15.5, color: "var(--ink)", lineHeight: 1.2, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{product.name}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4, background: "var(--grad)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{fmt(product.price)}</div>
+      </div>
+      <button onClick={(e) => { e.stopPropagation(); onAdd(product, e.currentTarget); }} style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: "var(--grad)", color: "#fff", display: "grid", placeItems: "center", boxShadow: "0 5px 14px var(--grad-shadow)", flexShrink: 0 }}>
+        <Icon name={added ? "check" : "plus"} size={19} sw={2.1} />
+      </button>
+    </div>
+  );
+}
+
+function DetailScreen({ product, qty, setQty, onAdd }) {
+  const [tab, setTab] = useState("about");
+  return (
+    <React.Fragment>
+      <div className="scroll no-scrollbar" style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ position: "relative", margin: "10px 16px 0", borderRadius: 24, overflow: "hidden", aspectRatio: "1 / 1.04", background: "var(--ph-bg)" }}>
+          <ProductImage radius={24} />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0) 62%, rgba(40,20,70,0.30))", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", top: 14, left: 14, height: 30, padding: "0 13px", borderRadius: 9999, background: "rgba(255,255,255,0.82)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", fontSize: 11.5, fontWeight: 600, letterSpacing: "0.04em", color: "var(--accent-ink)" }}>{product.category}</div>
+          <button style={{ position: "absolute", top: 12, right: 12, width: 38, height: 38, borderRadius: "50%", background: "rgba(255,255,255,0.82)", backdropFilter: "blur(8px)", display: "grid", placeItems: "center", color: "var(--ink-soft)" }} aria-label="Save">
+            <Icon name="heart" size={19} />
+          </button>
+        </div>
+        <div style={{ padding: "20px 22px 4px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{product.brand}</div>
+              <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 25, lineHeight: 1.18, color: "var(--ink)", margin: "7px 0 0", textWrap: "pretty" }}>{product.name}</h1>
+              <div style={{ fontSize: 13, color: "var(--ink-faint)", marginTop: 7 }}>{product.size}</div>
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 600, whiteSpace: "nowrap", paddingTop: 14, background: "var(--grad)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{fmt(product.price)}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 26, padding: "20px 22px 0", borderBottom: "1px solid var(--line)" }}>
+          {[["about", "About"], ["how", "How to use"]].map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ paddingBottom: 12, fontSize: 14.5, fontWeight: tab === k ? 600 : 500, color: tab === k ? "var(--ink)" : "var(--ink-faint)", borderBottom: tab === k ? "2px solid var(--accent-ink)" : "2px solid transparent", marginBottom: -1 }}>{label}</button>
+          ))}
+        </div>
+        <div style={{ padding: "18px 22px 28px", fontSize: 15, lineHeight: 1.65, color: "var(--ink-soft)" }}>
+          {tab === "about" ? product.description : product.instructions}
+        </div>
+        <div style={{ height: 12 }} />
+      </div>
+      <div className="footer" style={{ flexShrink: 0, padding: "12px 16px max(28px, env(safe-area-inset-bottom))", background: "rgba(255,255,255,0.92)", backdropFilter: "blur(12px)", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
+        <QtyStepper value={qty} onDec={() => setQty(Math.max(1, qty - 1))} onInc={() => setQty(qty + 1)} />
+        <div style={{ flex: 1 }}>
+          <GradientButton onClick={(e) => onAdd(product, qty, e && e.currentTarget)}>
+            <Icon name="bag" size={20} /> Add to Bag · {fmt(product.price * qty)}
+          </GradientButton>
+        </div>
+      </div>
+    </React.Fragment>
+  );
+}
+
+function CartScreen({ items, setQty, removeItem, subtotal, shipping, goCheckout, goHome }) {
+  const total = subtotal + (items.length ? shipping : 0);
+  return (
+    <React.Fragment>
+      <div className="scroll no-scrollbar" style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ padding: "18px 22px 6px" }}>
+          <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 27, color: "var(--ink)", margin: 0 }}>Your Bag</h1>
+          <div style={{ fontSize: 13, color: "var(--ink-faint)", marginTop: 4 }}>{items.length} {items.length === 1 ? "item" : "items"}</div>
+        </div>
+        {items.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "70px 30px" }}>
+            <div style={{ width: 64, height: 64, borderRadius: "50%", margin: "0 auto", display: "grid", placeItems: "center", background: "var(--grad-wash)", color: "var(--accent-ink)" }}>
+              <Icon name="bag" size={28} />
+            </div>
+            <div style={{ marginTop: 16, fontFamily: "var(--serif)", fontSize: 19, color: "var(--ink)" }}>Your bag is empty</div>
+            <div style={{ marginTop: 6, fontSize: 14, color: "var(--ink-faint)" }}>Discover the edit and add a ritual.</div>
+            <button onClick={goHome} style={{ marginTop: 20, height: 44, padding: "0 22px", borderRadius: 9999, border: "1px solid var(--accent-line)", background: "#fff", color: "var(--accent-ink)", fontSize: 14.5, fontWeight: 600 }}>Browse products</button>
+          </div>
+        ) : (
+          <div style={{ padding: "14px 16px 8px", display: "flex", flexDirection: "column", gap: 12 }}>
+            {items.map((it) => (
+              <div key={it.id} style={{ display: "flex", gap: 14, padding: 10, borderRadius: 18, border: "1px solid var(--line)", background: "#fff" }}>
+                <div style={{ width: 78, height: 78, borderRadius: 13, overflow: "hidden", flexShrink: 0, background: "var(--ph-bg)" }}>
+                  <ProductImage radius={13} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 9.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{it.brand}</div>
+                      <div style={{ fontFamily: "var(--serif)", fontSize: 15.5, color: "var(--ink)", lineHeight: 1.22, marginTop: 2, textWrap: "pretty", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{it.name}</div>
+                    </div>
+                    <button onClick={() => removeItem(it.id)} aria-label="Remove" style={{ color: "var(--ink-faint)", flexShrink: 0, height: 22 }}><Icon name="close" size={17} /></button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: 8 }}>
+                    <QtyStepper compact value={it.qty} onDec={() => setQty(it.id, it.qty - 1)} onInc={() => setQty(it.id, it.qty + 1)} />
+                    <span style={{ fontSize: 15.5, fontWeight: 600, background: "var(--grad)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{fmt(it.price * it.qty)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ height: items.length ? 200 : 20 }} />
+      </div>
+      {items.length > 0 && (
+        <div className="footer" style={{ flexShrink: 0, padding: "16px 20px max(28px, env(safe-area-inset-bottom))", background: "rgba(255,255,255,0.94)", backdropFilter: "blur(12px)", borderTop: "1px solid var(--line)" }}>
+          <SummaryRow label="Subtotal" value={fmt(subtotal)} />
+          <SummaryRow label="Delivery" value={shipping === 0 ? "Free" : fmt(shipping)} />
+          <div style={{ height: 1, background: "var(--line)", margin: "12px 0" }} />
+          <SummaryRow label="Total" value={fmt(total)} big />
+          <div style={{ height: 14 }} />
+          <GradientButton onClick={goCheckout}>Checkout <Icon name="chevron" size={18} sw={2.2} /></GradientButton>
+        </div>
+      )}
+    </React.Fragment>
+  );
+}
+
+function Field({ label, value, onChange, placeholder, type = "text", half }) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 7, flex: half ? 1 : "none" }}>
+      <span style={{ fontSize: 11.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{label}</span>
+      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} type={type} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)}
+        style={{ height: 50, borderRadius: 13, padding: "0 15px", fontSize: 15.5, color: "var(--ink)", border: focus ? "1px solid var(--accent-ink)" : "1px solid var(--line)", outline: "none", background: "#fff", boxShadow: focus ? "0 4px 16px var(--grad-shadow)" : "none", transition: "all .18s ease" }} />
+    </label>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{ padding: "18px 22px 4px" }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--accent-ink)", marginBottom: 14 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function MethodRow({ active, onClick, title, sub, price }) {
+  return (
+    <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 13, padding: "14px 16px", borderRadius: 15, textAlign: "left", border: active ? "1.5px solid var(--accent-ink)" : "1px solid var(--line)", background: active ? "var(--grad-wash)" : "#fff", transition: "all .18s ease" }}>
+      <span style={{ width: 20, height: 20, borderRadius: "50%", flexShrink: 0, display: "grid", placeItems: "center", border: active ? "none" : "1.5px solid var(--line)", background: active ? "var(--grad)" : "#fff" }}>
+        {active && <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff" }} />}
+      </span>
+      <span style={{ flex: 1 }}>
+        <span style={{ display: "block", fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>{title}</span>
+        <span style={{ display: "block", fontSize: 12.5, color: "var(--ink-faint)", marginTop: 2 }}>{sub}</span>
+      </span>
+      <span style={{ fontSize: 14.5, fontWeight: 600, color: active ? "var(--accent-ink)" : "var(--ink)" }}>{price}</span>
+    </button>
+  );
+}
+
+function CheckoutScreen({ form, setForm, items, subtotal, shipping, placeOrder }) {
+  const [method, setMethod] = useState("standard");
+  const deliveryFee = method === "express" ? 8 : shipping;
+  const total = subtotal + deliveryFee;
+  const set = (k) => (v) => setForm({ ...form, [k]: v });
+  const valid = form.name.trim() && form.phone.trim() && form.address.trim();
+  return (
+    <React.Fragment>
+      <div className="scroll no-scrollbar" style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ padding: "18px 22px 8px" }}>
+          <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 27, color: "var(--ink)", margin: 0 }}>Checkout</h1>
+        </div>
+        <Section title="Delivery details">
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <Field label="Full name" value={form.name} onChange={set("name")} placeholder="Sora Kim" />
+            <Field label="Phone" value={form.phone} onChange={set("phone")} placeholder="+1 555 0148" type="tel" />
+            <Field label="Address" value={form.address} onChange={set("address")} placeholder="24 Aurora St, Apt 5" />
+            <div style={{ display: "flex", gap: 12 }}>
+              <Field half label="City" value={form.city} onChange={set("city")} placeholder="Seoul" />
+              <Field half label="Postcode" value={form.zip} onChange={set("zip")} placeholder="04524" />
+            </div>
+          </div>
+        </Section>
+        <Section title="Delivery method">
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <MethodRow active={method === "standard"} onClick={() => setMethod("standard")} title="Standard" sub="3–5 business days" price="Free" />
+            <MethodRow active={method === "express"} onClick={() => setMethod("express")} title="Express" sub="1–2 business days" price="$8" />
+          </div>
+        </Section>
+        <Section title="Order summary">
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+            {items.map((it) => (
+              <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 46, height: 46, borderRadius: 10, overflow: "hidden", flexShrink: 0, background: "var(--ph-bg)" }}>
+                  <ProductImage radius={10} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div>
+                  <div style={{ fontSize: 12, color: "var(--ink-faint)" }}>Qty {it.qty}</div>
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>{fmt(it.price * it.qty)}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ height: 1, background: "var(--line)", margin: "0 0 12px" }} />
+          <SummaryRow label="Subtotal" value={fmt(subtotal)} />
+          <SummaryRow label="Delivery" value={deliveryFee === 0 ? "Free" : fmt(deliveryFee)} />
+          <div style={{ height: 1, background: "var(--line)", margin: "12px 0" }} />
+          <SummaryRow label="Total" value={fmt(total)} big />
+        </Section>
+        <div style={{ height: 130 }} />
+      </div>
+      <div className="footer" style={{ flexShrink: 0, padding: "14px 16px max(28px, env(safe-area-inset-bottom))", background: "rgba(255,255,255,0.94)", backdropFilter: "blur(12px)", borderTop: "1px solid var(--line)" }}>
+        <GradientButton disabled={!valid} onClick={() => placeOrder(total)}>
+          {valid ? <React.Fragment>Place Order · {fmt(total)}</React.Fragment> : "Enter delivery details"}
+        </GradientButton>
+        <div style={{ textAlign: "center", fontSize: 11.5, color: "var(--ink-faint)", marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          Secured by Telegram Payments
+        </div>
+      </div>
+    </React.Fragment>
+  );
+}
+
+function ConfirmScreen({ orderNo, total, name, onDone }) {
+  return (
+    <React.Fragment>
+      <div className="scroll no-scrollbar" style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 32px", textAlign: "center" }}>
+          <div className="pop-in" style={{ width: 110, height: 110, borderRadius: "50%", background: "var(--grad)", display: "grid", placeItems: "center", boxShadow: "0 20px 50px var(--grad-shadow)" }}>
+            <Icon name="check" size={52} stroke="#fff" sw={2.4} />
+          </div>
+          <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 28, color: "var(--ink)", margin: "28px 0 0", whiteSpace: "nowrap" }}>Order placed</h1>
+          <p style={{ fontSize: 15, lineHeight: 1.6, color: "var(--ink-soft)", margin: "12px 0 0", maxWidth: 280 }}>
+            Thank you{name ? ", " + name.split(" ")[0] : ""}. We’ve sent a confirmation to your Telegram chat and will notify you when it ships.
+          </p>
+          <div style={{ width: "100%", maxWidth: 320, marginTop: 28, borderRadius: 18, border: "1px solid var(--line)", background: "var(--surface)", padding: "16px 18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 12.5, color: "var(--ink-faint)", letterSpacing: "0.04em" }}>Order number</span>
+              <span style={{ fontSize: 14.5, fontWeight: 600, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>{orderNo}</span>
+            </div>
+            <div style={{ height: 1, background: "var(--line)", margin: "13px 0" }} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 12.5, color: "var(--ink-faint)", letterSpacing: "0.04em" }}>Total paid</span>
+              <span style={{ fontSize: 18, fontWeight: 700, background: "var(--grad)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>{fmt(total)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="footer" style={{ flexShrink: 0, padding: "14px 16px max(28px, env(safe-area-inset-bottom))" }}>
+        <GradientButton onClick={onDone}>Continue shopping</GradientButton>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────
+   App — routing, cart state, Telegram integration
+   ────────────────────────────────────────────────────────────── */
+function App() {
+  const products = PRODUCTS;
+  const [stack, setStack] = useState([{ screen: "home" }]);
+  const route = stack[stack.length - 1];
+  const [category, setCategory] = useState("All");
+  const [query, setQuery] = useState("");
+  const [detailQty, setDetailQty] = useState(1);
+  const [cart, setCart] = useState({});
+  const [justAdded, setJustAdded] = useState(null);
+  const tgUser = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) || null;
+  const [form, setForm] = useState({
+    name: tgUser ? [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") : "Sora Kim",
+    phone: "+1 555 0148", address: "24 Aurora St, Apt 5", city: "Seoul", zip: "04524",
+  });
+  const [order, setOrder] = useState({ no: "", total: 0, name: "" });
+  const rootRef = useRef(null);
+  const scrollReset = () => { const s = rootRef.current && rootRef.current.querySelector(".scroll"); if (s) s.scrollTop = 0; };
+
+  const nav = (r) => { setStack((s) => [...s, r]); setTimeout(scrollReset, 0); };
+  const back = () => setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
+  const resetTo = (r) => { setStack([r]); setTimeout(scrollReset, 0); };
+
+  const openProduct = (p) => { setDetailQty(1); nav({ screen: "detail", activeId: p.id }); };
+  const goSearch = () => nav({ screen: "search" });
+
+  const addQty = (id, n) => setCart((c) => ({ ...c, [id]: (c[id] || 0) + n }));
+  const flash = (id) => { setJustAdded(id); setTimeout(() => setJustAdded((v) => (v === id ? null : v)), 900); };
+
+  const addToCart = (p, el) => { addQty(p.id, 1); flash(p.id); flyToBag(el, rootRef.current); haptic("light"); };
+  const addFromDetail = (p, qty, el) => { addQty(p.id, qty); flash(p.id); flyToBag(el, rootRef.current); haptic("medium"); setTimeout(() => nav({ screen: "cart" }), 460); };
+
+  const setQty = (id, q) => setCart((c) => { const n = { ...c }; if (q < 1) delete n[id]; else n[id] = q; return n; });
+  const removeItem = (id) => setCart((c) => { const n = { ...c }; delete n[id]; return n; });
+
+  const cartItems = products.filter((p) => cart[p.id]).map((p) => ({ ...p, qty: cart[p.id] }));
+  const cartCount = cartItems.reduce((s, it) => s + it.qty, 0);
+  const subtotal = cartItems.reduce((s, it) => s + it.price * it.qty, 0);
+  const shipping = 0;
+
+  const placeOrder = (total) => {
+    const no = "VN-" + Math.floor(100000 + Math.random() * 899999);
+    setOrder({ no, total, name: form.name });
+    setCart({});
+    notify("success");
+    resetTo({ screen: "confirm" });
+  };
+
+  const activeProduct = route.activeId ? products.find((p) => p.id === route.activeId) : null;
+  const showBack = stack.length > 1 && route.screen !== "confirm";
+
+  /* Telegram boot + chrome */
+  useEffect(() => {
+    if (!tg) return;
+    tg.ready();
+    tg.expand();
+    try { tg.setHeaderColor && tg.setHeaderColor("#ffffff"); } catch (e) {}
+    try { tg.setBackgroundColor && tg.setBackgroundColor("#ffffff"); } catch (e) {}
+    if (tg.enableClosingConfirmation) tg.enableClosingConfirmation();
+  }, []);
+
+  /* Drive Telegram's native BackButton from the nav stack */
+  useEffect(() => {
+    if (!tg || !tg.BackButton) return;
+    const handler = () => back();
+    if (showBack) { tg.BackButton.show(); tg.BackButton.onClick(handler); }
+    else tg.BackButton.hide();
+    return () => { try { tg.BackButton.offClick(handler); } catch (e) {} };
+  }, [showBack]);
+
+  const closeApp = () => { if (tg && tg.close) tg.close(); else resetTo({ screen: "home" }); };
+
+  let body;
+  if (route.screen === "home")
+    body = <HomeScreen products={products} category={category} setCategory={setCategory} openProduct={openProduct} addToCart={addToCart}
+      cartCount={cartCount} cartTotal={subtotal} goCart={() => nav({ screen: "cart" })} goSearch={goSearch} justAdded={justAdded} />;
+  else if (route.screen === "search")
+    body = <SearchScreen products={products} query={query} setQuery={setQuery} openProduct={openProduct} addToCart={addToCart} justAdded={justAdded} />;
+  else if (route.screen === "detail" && activeProduct)
+    body = <DetailScreen product={activeProduct} qty={detailQty} setQty={setDetailQty} onAdd={addFromDetail} />;
+  else if (route.screen === "cart")
+    body = <CartScreen items={cartItems} setQty={setQty} removeItem={removeItem} subtotal={subtotal} shipping={shipping}
+      goCheckout={() => nav({ screen: "checkout" })} goHome={() => resetTo({ screen: "home" })} />;
+  else if (route.screen === "checkout")
+    body = <CheckoutScreen form={form} setForm={setForm} items={cartItems} subtotal={subtotal} shipping={shipping} placeOrder={placeOrder} />;
+  else if (route.screen === "confirm")
+    body = <ConfirmScreen orderNo={order.no} total={order.total} name={order.name} onDone={() => resetTo({ screen: "home" })} />;
+
+  return (
+    <div className="app-shell">
+      <div ref={rootRef} style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)", minHeight: 0 }}>
+        <TelegramHeader showBack={showBack} onBack={back} onClose={closeApp} />
+        <div key={route.screen + (route.activeId || "")} className="screen-enter">
+          {body}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
